@@ -1,3 +1,5 @@
+mod waitmate;
+
 fn main() {
-    println!("Hello, world!");
+    waitmate::app::App::new().run();
 }
