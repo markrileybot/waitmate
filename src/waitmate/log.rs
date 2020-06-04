@@ -1,9 +1,55 @@
+use std::borrow::BorrowMut;
 use std::path::Path;
 use std::str;
 
-use rocksdb::{DB, Options, ReadOptions};
+use rocksdb::{ColumnFamily, DB, DBRawIterator, Options, ReadOptions};
 
 use crate::waitmate::api::Event;
+
+pub struct Cursor<'a, 'b> {
+    position: Option<Vec<u8>>,
+    iter: &'a mut DBRawIterator<'b>,
+    db: &'a DB,
+    off_cf: Option<&'a ColumnFamily>,
+    off_key: Option<&'a [u8]>,
+    seek_needed: bool
+}
+impl Iterator for Cursor<'_, '_> {
+    type Item = (String, Event);
+    fn next(&mut self) -> Option<(String, Event)> {
+        let mut ret = None;
+        if self.iter.valid() {
+            if self.seek_needed {
+                self.iter.next();
+            }
+            self.seek_needed = true;
+
+            if self.iter.valid() {
+                let key = self.iter.key().unwrap();
+                let value = self.iter.value().unwrap();
+                self.position = Some(key.to_vec());
+
+                ret = Some((
+                    String::from(str::from_utf8(key).unwrap()),
+                    serde_json::from_slice(value).unwrap()
+                ));
+
+                match self.off_cf {
+                    Some(off_cf) => {
+                        match self.off_key {
+                            Some(off_key) => {
+                                self.db.put_cf(off_cf, off_key, key).unwrap();
+                            },
+                            _ => {}
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
+        return ret;
+    }
+}
 
 pub struct EventLog {
     db: DB,
@@ -35,17 +81,27 @@ impl EventLog {
         let cf = self.db.cf_handle("log").unwrap();
         self.db.put_cf(cf, key.as_bytes(), val).unwrap();
     }
-    pub fn tail<TailCallback, ContinueCallback>(&self, name: &str,
-                                            continue_func: ContinueCallback,
-                                            tail_func: TailCallback)
+    pub fn dump<DumpCallback>(&self, dump_func: DumpCallback)
         where
-            ContinueCallback: Fn() -> bool,
-            TailCallback: Fn(&str, Event) {
+            DumpCallback: Fn(&mut Cursor) {
+        self.tail("", |c| {
+            dump_func(c);
+            return false;
+        });
+    }
+    pub fn tail<TailCallback>(&self, name: &str,
+                              tail_func: TailCallback)
+        where
+            TailCallback: Fn(&mut Cursor) -> bool {
 
-        let mut run = true;
         let off_key = name.as_bytes();
         let log_cf = self.db.cf_handle("log").unwrap();
         let off_cf = self.db.cf_handle("offsets").unwrap();
+        let off_cf_opt = if name.is_empty() {
+            None
+        } else {
+            Some(off_cf)
+        };
 
         let mut start_key: Option<Vec<u8>> = self.db.get_pinned_cf(off_cf, off_key)
             .unwrap()
@@ -55,7 +111,7 @@ impl EventLog {
         opts.set_tailing(true);
         let mut iter = self.db.raw_iterator_cf_opt(log_cf, opts);
 
-        while run {
+        loop {
             match start_key.as_ref() {
                 Some(k) => {
                     iter.seek(k);
@@ -68,19 +124,24 @@ impl EventLog {
                 }
             }
 
-            while iter.valid() {
-                let key = iter.key().unwrap();
-                let value = iter.value().unwrap();
-
-                tail_func(str::from_utf8(key).unwrap(),
-                          serde_json::from_slice(value).unwrap());
-
-                self.db.put_cf(off_cf, off_key, key).unwrap();
-
-                start_key = Some(key.to_vec());
-                iter.next();
+            let mut cursor = Cursor {
+                db: &self.db,
+                position: None,
+                iter: iter.borrow_mut(),
+                off_key: Some(&off_key),
+                off_cf: off_cf_opt,
+                seek_needed: false
+            };
+            if tail_func(cursor.borrow_mut()) {
+                match cursor.position {
+                    Some(p) => {
+                        start_key = Some(p)
+                    }
+                    _ => {}
+                }
+            } else {
+                break;
             }
-            run = continue_func();
         }
     }
     fn close(&self) {

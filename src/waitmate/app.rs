@@ -6,40 +6,59 @@ use crossbeam::channel::{Receiver, Select};
 
 use crate::waitmate::api::{Event, Notifier, Waiter};
 use crate::waitmate::log::EventLog;
+use crate::waitmate::net::{Client, Server};
 use crate::waitmate::std::{SleepyWaiter, StdinWaiter, StdoutNotifier};
 use crate::waitmate::thread::{NotifierThread, Producer, WaiterThread};
 
 pub struct App {
     config: Config,
-    event_log: Arc<EventLog>
 }
 impl App {
     pub fn new() -> App {
         let config_base = dirs::config_dir().unwrap();
         let config_file = config_base
             .join("waitmate.yaml");
-        let event_log_dir = dirs::data_local_dir()
-            .unwrap()
-            .join("waitmate")
-            .join("event_log.rdb");
         let mut config = Config::new();
         config
             .merge(config::File::from(config_file).required(false)).unwrap()
             .merge(config::File::new("waitmate", FileFormat::Yaml).required(false)).unwrap()
             .merge(config::Environment::with_prefix("WAITMATE"))
             .unwrap();
-        let event_log = Arc::new(EventLog::new(event_log_dir.as_path()));
 
         return App {
             config,
-            event_log
         }
+    }
+    pub fn dump(&self) {
+        let event_log = App::create_event_log(false);
+        event_log.dump(|cursor| {
+            for (key, event) in cursor {
+                println!("{} {}", key, event);
+            }
+        })
+    }
+
+    pub fn run_client(&self, address: &str) {
+        let notifiers: Vec<Box<dyn Notifier>> = vec![Box::new(Client::new(address))];
+        let waiters: Vec<Box<dyn Waiter>> = vec![Box::new(StdinWaiter::new()), Box::new(SleepyWaiter::new())];
+        self._run(true, notifiers, waiters)
+    }
+
+    pub fn run_server(&self, address: &str) {
+        let notifiers: Vec<Box<dyn Notifier>> = vec![Box::new(StdoutNotifier::new())];
+        let waiters: Vec<Box<dyn Waiter>> = vec![Box::new(Server::new(address))];
+        self._run(false, notifiers, waiters)
     }
 
     pub fn run(&self) {
         let notifiers: Vec<Box<dyn Notifier>> = vec![Box::new(StdoutNotifier::new())];
         let waiters: Vec<Box<dyn Waiter>> = vec![Box::new(StdinWaiter::new()), Box::new(SleepyWaiter::new())];
-        let event_log: &EventLog = &self.event_log;
+        self._run(false, notifiers, waiters)
+    }
+
+    fn _run(&self, temp: bool, notifiers: Vec<Box<dyn Notifier>>, waiters: Vec<Box<dyn Waiter>>) {
+        let event_log = Arc::new(App::create_event_log(temp));
+        let local_event_log: &EventLog = event_log.borrow();
 
         let mut receivers: Vec<&Receiver<Option<Event>>> = Vec::with_capacity(waiters.len() + notifiers.len());
         let mut selector = Select::new();
@@ -47,7 +66,7 @@ impl App {
 
         let notifier_threads = notifiers
             .into_iter()
-            .map(|n| NotifierThread::new(n, self.event_log.clone()))
+            .map(|n| NotifierThread::new(n, event_log.clone()))
             .collect::<Vec<_>>();
         let waiter_threads = waiters
             .into_iter()
@@ -64,7 +83,7 @@ impl App {
             .for_each(|r| receivers.push(r));
         receivers
             .iter()
-            .for_each(|r| {selector.recv(*r);});
+            .for_each(|r| { selector.recv(*r); });
 
         while waiters_pending > 0 {
             let op = selector.select();
@@ -74,7 +93,7 @@ impl App {
                 Ok(e) => {
                     match e {
                         Some(event) => {
-                            event_log.add(&event);
+                            local_event_log.add(&event);
                             for x in &notifier_threads {
                                 x.tickle();
                             }
@@ -88,5 +107,17 @@ impl App {
                 }
             }
         }
+    }
+
+    fn create_event_log(temp: bool) -> EventLog {
+        let base_dir = if temp {
+            dirs::runtime_dir().unwrap()
+        } else {
+            dirs::data_local_dir().unwrap()
+        };
+        let event_log_dir = base_dir
+            .join("waitmate")
+            .join("event_log.rdb");
+        return EventLog::new(event_log_dir.as_path());
     }
 }

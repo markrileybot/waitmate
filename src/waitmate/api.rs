@@ -2,6 +2,9 @@ use std::time::SystemTime;
 
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
+use std::fmt::Display;
+use serde::export::Formatter;
+use core::fmt;
 
 #[derive(Debug, Deserialize, Serialize)]
 pub enum Level {
@@ -33,6 +36,11 @@ impl Event {
             level,
             source: String::from(source.name())
         }
+    }
+}
+impl Display for Event {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        write!(f, "{:?}", self)
     }
 }
 

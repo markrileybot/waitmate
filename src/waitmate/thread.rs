@@ -2,7 +2,7 @@ use std::sync::Arc;
 use std::thread;
 use std::thread::JoinHandle;
 
-use crossbeam::channel::{Receiver, Sender, unbounded};
+use crossbeam::channel::{bounded, Receiver, Sender, unbounded};
 
 use crate::waitmate::api::{Event, EventBus, Notifier, Waiter};
 use crate::waitmate::log::EventLog;
@@ -48,15 +48,17 @@ pub struct NotifierThread {
 }
 impl NotifierThread {
     pub fn new(notifier: Box<dyn Notifier>, event_log: Arc<EventLog>) -> NotifierThread {
-        let (tickler, ticklee): (Sender<bool>, Receiver<bool>) = unbounded();
+        let (tickler, ticklee): (Sender<bool>, Receiver<bool>) = bounded(1);
         let (event_bus, receiver) = EventChannel::new();
         let handle = thread::Builder::new()
             .name(String::from(notifier.name()))
             .spawn(move || {
-                event_log.tail(
-                    notifier.name(),
-                    || ticklee.recv().unwrap(),
-                    |_, event: Event| notifier.notify(event, &event_bus))
+                event_log.tail(notifier.name(), |cursor|  {
+                    for (_, event) in cursor {
+                        notifier.notify(event, &event_bus)
+                    }
+                    return ticklee.recv().unwrap_or(false);
+                });
             }).unwrap();
 
         return NotifierThread {
@@ -66,8 +68,9 @@ impl NotifierThread {
         };
     }
     pub fn tickle(&self) {
-        self.tickler.send(true)
-            .unwrap();
+        if self.tickler.is_empty() {
+            self.tickler.send(true).unwrap();
+        }
     }
 }
 impl Drop for NotifierThread {
@@ -75,7 +78,7 @@ impl Drop for NotifierThread {
         self.tickler.send(false).unwrap();
         self.handle
             .take().unwrap()
-            .join().unwrap()
+            .join().unwrap();
     }
 }
 impl Producer for NotifierThread {
