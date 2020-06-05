@@ -11,19 +11,19 @@ pub trait Producer {
     fn channel(&self) -> &Receiver<Option<Event>>;
 }
 
-struct EventChannel {
+pub struct EventChannel {
     sender: Sender<Option<Event>>,
     done: bool
 }
 impl EventChannel {
-    fn new() -> (EventChannel, Receiver<Option<Event>>) {
+    pub fn new() -> (EventChannel, Receiver<Option<Event>>) {
         let (sender, receiver): (Sender<Option<Event>>, Receiver<Option<Event>>) = unbounded();
         return (EventChannel {
             sender,
             done: false
         }, receiver);
     }
-    fn done(&mut self) {
+    pub fn done(&mut self) {
         if !self.done {
             self.done = true;
             self.sender.send(None).unwrap();

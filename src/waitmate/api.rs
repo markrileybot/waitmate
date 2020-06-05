@@ -61,24 +61,31 @@ pub trait Waiter: Send + Named {
     fn wait(&self, bus: &dyn EventBus);
 }
 
+pub struct EmptyNamed {
+}
+impl Named for EmptyNamed {
+    fn name(&self) -> &str {
+        return "NAMED";
+    }
+}
+
+pub struct EmptyEventBus {
+}
+impl EventBus for EmptyEventBus {
+    fn publish(&self, _event: Event) {
+    }
+}
 
 #[cfg(test)]
 mod tests {
-    use crate::waitmate::api::{Named, Event, Level};
-    use std::time::{SystemTime, Duration};
     use std::thread::sleep;
+    use std::time::{Duration, SystemTime};
 
-    struct TestNamed {
-    }
-    impl Named for TestNamed {
-        fn name(&self) -> &str {
-            return "NAMED";
-        }
-    }
+    use crate::waitmate::api::{EmptyNamed, Event, Level};
 
     #[test]
     fn event_io() {
-        let source = TestNamed {};
+        let source = EmptyNamed {};
         let start = SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).unwrap().as_micros();
         let e = Event::new(&source, "a", "b", "c", Level::WARN);
         assert!(e.time >= start);

@@ -1,4 +1,5 @@
 use lazy_static::lazy_static;
+
 use crate::waitmate::api::{Event, EventBus, Named, Notifier, Waiter};
 
 lazy_static! {
@@ -7,15 +8,20 @@ lazy_static! {
 
 pub struct Server {
     skt: zmq::Socket,
-    name: String
+    name: String,
+    kill_byte: bool
 }
 impl Server {
     pub fn new(address: &str) -> Self {
+        return Self::new_test(address, false);
+    }
+    pub fn new_test(address: &str, kill_byte: bool) -> Self {
         let skt = CTX.socket(zmq::REP).unwrap();
         skt.bind(address).unwrap();
         return Server {
             skt,
-            name: String::from(format!("Server@{}", address))
+            name: String::from(format!("Server@{}", address)),
+            kill_byte
         }
     }
 }
@@ -24,6 +30,9 @@ impl Waiter for Server {
         let mut msg = zmq::Message::new();
         loop {
             self.skt.recv(&mut msg, 0).unwrap();
+            if self.kill_byte && msg.len() == 1 && msg.as_ref()[0] == 0 {
+                break;
+            }
             let event: Event = serde_json::from_slice(msg.as_ref()).unwrap();
             bus.publish(event);
             self.skt.send("OK", 0).unwrap();
@@ -66,58 +75,36 @@ impl Named for Client {
 
 #[cfg(test)]
 mod tests {
-    use crate::waitmate::api::{Named, Event, Level};
-    use std::time::{SystemTime, Duration};
-    use std::thread::sleep;
+    use std::{process, thread};
+    use std::time::{Duration, SystemTime};
 
-    struct TestNamed {
-    }
-    impl Named for TestNamed {
-        fn name(&self) -> &str {
-            return "NAMED";
-        }
-    }
+    use crate::waitmate::api::{EmptyEventBus, EmptyNamed, Event, Level, Named, Notifier, Waiter};
+    use crate::waitmate::net::{Client, Server};
+    use crate::waitmate::thread::EventChannel;
 
     #[test]
-    fn event_io() {
-        let source = TestNamed {};
+    fn test_event_reqrep() {
+        let addr = format!("ipc:///tmp/wmnetrstest.{}", process::id());
+        let server = Server::new_test(addr.as_str(), true);
+        let client = Client::new(addr.as_str());
+        let kill_bytes: [u8;1] = [0];
+        let source = EmptyNamed {};
+
+        let (test_server_bus, receiver) = EventChannel::new();
+        let test_client_bus = EmptyEventBus {};
+
         let start = SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).unwrap().as_micros();
         let e = Event::new(&source, "a", "b", "c", Level::WARN);
-        assert!(e.time >= start);
-        assert_eq!("a", e.name);
-        assert_eq!("b", e.description);
-        assert_eq!("c", e.category);
-        assert_eq!(Level::WARN, #[cfg(test)]
-mod tests {
-    use crate::waitmate::api::{Named, Event, Level};
-    use std::time::{SystemTime, Duration};
-    use std::thread::sleep;
 
-    struct TestNamed {
-    }
-    impl Named for TestNamed {
-        fn name(&self) -> &str {
-            return "NAMED";
-        }
-    }
+        thread::spawn(move || server.wait(&test_server_bus));
+        client.notify(e, &test_client_bus);
+        client.skt.send(kill_bytes.as_ref(), 0).unwrap(); // kill the server
+        let e = receiver.recv_timeout(Duration::from_millis(1000)).unwrap().unwrap();
 
-    #[test]
-    fn event_io() {
-        let source = TestNamed {};
-        let start = SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).unwrap().as_micros();
-        let e = Event::new(&source, "a", "b", "c", Level::WARN);
         assert!(e.time >= start);
         assert_eq!("a", e.name);
         assert_eq!("b", e.description);
         assert_eq!("c", e.category);
         assert_eq!(Level::WARN, e.level);
-        sleep(Duration::from_millis(10));
-        let e2 = Event::new(&source, "a", "b", "c", Level::WARN);
-        assert!(e2.time > e.time);
-    }
-}e.level);
-        sleep(Duration::from_millis(10));
-        let e2 = Event::new(&source, "a", "b", "c", Level::WARN);
-        assert!(e2.time > e.time);
     }
 }
