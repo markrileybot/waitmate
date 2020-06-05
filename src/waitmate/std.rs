@@ -29,9 +29,9 @@ impl Waiter for StdinWaiter {
             if self.matcher.is_match(l.as_str()) {
                 let e = Event::new(
                     self,
-                    "A name".to_string(),
-                    l,
-                    "Cat".to_string(),
+                    "A name",
+                    l.as_str(),
+                    "Cat",
                     Level::WARN
                 );
                 bus.publish(e);
@@ -57,9 +57,9 @@ impl Waiter for SleepyWaiter {
         for i in 0..10 {
             bus.publish(Event::new(
                 self,
-                "A name".to_string(),
-                format!("EVENT {}", i),
-                "Doggo".to_string(),
+                "A name",
+                format!("EVENT {}", i).as_str(),
+                "Doggo",
                 Level::WARN
             ));
             sleep(Duration::from_millis(1));

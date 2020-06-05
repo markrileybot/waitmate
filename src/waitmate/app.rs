@@ -9,25 +9,36 @@ use crate::waitmate::log::EventLog;
 use crate::waitmate::net::{Client, Server};
 use crate::waitmate::std::{SleepyWaiter, StdinWaiter, StdoutNotifier};
 use crate::waitmate::thread::{NotifierThread, Producer, WaiterThread};
+use std::path::PathBuf;
+use std::process;
+
 
 pub struct App {
     config: Config,
 }
 impl App {
-    pub fn new() -> App {
+    pub fn new() -> Self {
+        return App::new_config(None);
+    }
+    pub fn new_config(config_file: Option<PathBuf>) -> Self {
         let config_base = dirs::config_dir().unwrap();
-        let config_file = config_base
+        let local_config = config_base
             .join("waitmate.yaml");
         let mut config = Config::new();
         config
-            .merge(config::File::from(config_file).required(false)).unwrap()
-            .merge(config::File::new("waitmate", FileFormat::Yaml).required(false)).unwrap()
-            .merge(config::Environment::with_prefix("WAITMATE"))
-            .unwrap();
+            .merge(config::File::from(local_config).required(false)).unwrap()
+            .merge(config::File::new("waitmate", FileFormat::Yaml).required(false)).unwrap();
+        if config_file.is_some() {
+            config.merge(config::File::from(config_file.unwrap()).required(false)).unwrap();
+        }
+        config.merge(config::Environment::with_prefix("WAITMATE")).unwrap();
 
         return App {
             config,
         }
+    }
+    pub fn dump_config(&self) {
+        println!("{:?}", self.config);
     }
     pub fn dump(&self) {
         let event_log = App::create_event_log(false);
@@ -53,6 +64,9 @@ impl App {
     pub fn run(&self) {
         let notifiers: Vec<Box<dyn Notifier>> = vec![Box::new(StdoutNotifier::new())];
         let waiters: Vec<Box<dyn Waiter>> = vec![Box::new(StdinWaiter::new()), Box::new(SleepyWaiter::new())];
+
+
+
         self._run(false, notifiers, waiters)
     }
 
@@ -110,14 +124,14 @@ impl App {
     }
 
     fn create_event_log(temp: bool) -> EventLog {
-        let base_dir = if temp {
-            dirs::runtime_dir().unwrap()
+        let (base_dir, pid) = if temp {
+            (dirs::runtime_dir().unwrap(), process::id())
         } else {
-            dirs::data_local_dir().unwrap()
+            (dirs::data_local_dir().unwrap(), 0)
         };
         let event_log_dir = base_dir
             .join("waitmate")
-            .join("event_log.rdb");
+            .join(format!("event_log.{}.rdb", pid));
         return EventLog::new(event_log_dir.as_path());
     }
 }

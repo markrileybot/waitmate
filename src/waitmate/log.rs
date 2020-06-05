@@ -94,18 +94,19 @@ impl EventLog {
         where
             TailCallback: Fn(&mut Cursor) -> bool {
 
+
+        let mut off_cf_opt: Option<&ColumnFamily> = None;
+        let mut start_key: Option<Vec<u8>> = None;
         let off_key = name.as_bytes();
         let log_cf = self.db.cf_handle("log").unwrap();
-        let off_cf = self.db.cf_handle("offsets").unwrap();
-        let off_cf_opt = if name.is_empty() {
-            None
-        } else {
-            Some(off_cf)
-        };
 
-        let mut start_key: Option<Vec<u8>> = self.db.get_pinned_cf(off_cf, off_key)
-            .unwrap()
-            .map_or(None, |k| Some(k.to_vec()));
+        if !name.is_empty() {
+            let off_cf = self.db.cf_handle("offsets").unwrap();
+            start_key = self.db.get_pinned_cf(off_cf, off_key)
+                .unwrap()
+                .map_or(None, |k| Some(k.to_vec()));
+            off_cf_opt = Some(off_cf);
+        }
 
         let mut opts = ReadOptions::default();
         opts.set_tailing(true);

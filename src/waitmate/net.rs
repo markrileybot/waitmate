@@ -63,3 +63,61 @@ impl Named for Client {
         return self.name.as_str();
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::waitmate::api::{Named, Event, Level};
+    use std::time::{SystemTime, Duration};
+    use std::thread::sleep;
+
+    struct TestNamed {
+    }
+    impl Named for TestNamed {
+        fn name(&self) -> &str {
+            return "NAMED";
+        }
+    }
+
+    #[test]
+    fn event_io() {
+        let source = TestNamed {};
+        let start = SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).unwrap().as_micros();
+        let e = Event::new(&source, "a", "b", "c", Level::WARN);
+        assert!(e.time >= start);
+        assert_eq!("a", e.name);
+        assert_eq!("b", e.description);
+        assert_eq!("c", e.category);
+        assert_eq!(Level::WARN, #[cfg(test)]
+mod tests {
+    use crate::waitmate::api::{Named, Event, Level};
+    use std::time::{SystemTime, Duration};
+    use std::thread::sleep;
+
+    struct TestNamed {
+    }
+    impl Named for TestNamed {
+        fn name(&self) -> &str {
+            return "NAMED";
+        }
+    }
+
+    #[test]
+    fn event_io() {
+        let source = TestNamed {};
+        let start = SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).unwrap().as_micros();
+        let e = Event::new(&source, "a", "b", "c", Level::WARN);
+        assert!(e.time >= start);
+        assert_eq!("a", e.name);
+        assert_eq!("b", e.description);
+        assert_eq!("c", e.category);
+        assert_eq!(Level::WARN, e.level);
+        sleep(Duration::from_millis(10));
+        let e2 = Event::new(&source, "a", "b", "c", Level::WARN);
+        assert!(e2.time > e.time);
+    }
+}e.level);
+        sleep(Duration::from_millis(10));
+        let e2 = Event::new(&source, "a", "b", "c", Level::WARN);
+        assert!(e2.time > e.time);
+    }
+}

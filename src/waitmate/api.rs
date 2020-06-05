@@ -1,12 +1,13 @@
+use core::fmt;
+use std::fmt::Display;
 use std::time::SystemTime;
 
+use config::Config;
 use serde::{Deserialize, Serialize};
-use uuid::Uuid;
-use std::fmt::Display;
 use serde::export::Formatter;
-use core::fmt;
+use uuid::Uuid;
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Deserialize, Serialize, PartialEq)]
 pub enum Level {
     TRACE,
     DEBUG,
@@ -26,13 +27,13 @@ pub struct Event {
     pub source: String,
 }
 impl Event {
-    pub fn new(source: &dyn Named, name: String, description: String, category: String, level: Level) -> Self {
+    pub fn new(source: &dyn Named, name: &str, description: &str, category: &str, level: Level) -> Self {
         Event {
             id: Uuid::new_v4(),
             time: SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).unwrap().as_micros(),
-            name,
-            description,
-            category,
+            name: String::from(name),
+            description: String::from(description),
+            category: String::from(category),
             level,
             source: String::from(source.name())
         }
@@ -58,4 +59,35 @@ pub trait Notifier: Send + Named {
 
 pub trait Waiter: Send + Named {
     fn wait(&self, bus: &dyn EventBus);
+}
+
+
+#[cfg(test)]
+mod tests {
+    use crate::waitmate::api::{Named, Event, Level};
+    use std::time::{SystemTime, Duration};
+    use std::thread::sleep;
+
+    struct TestNamed {
+    }
+    impl Named for TestNamed {
+        fn name(&self) -> &str {
+            return "NAMED";
+        }
+    }
+
+    #[test]
+    fn event_io() {
+        let source = TestNamed {};
+        let start = SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).unwrap().as_micros();
+        let e = Event::new(&source, "a", "b", "c", Level::WARN);
+        assert!(e.time >= start);
+        assert_eq!("a", e.name);
+        assert_eq!("b", e.description);
+        assert_eq!("c", e.category);
+        assert_eq!(Level::WARN, e.level);
+        sleep(Duration::from_millis(10));
+        let e2 = Event::new(&source, "a", "b", "c", Level::WARN);
+        assert!(e2.time > e.time);
+    }
 }
