@@ -1,46 +1,55 @@
+#[macro_use] extern crate actix_web;
+
 use std::env;
 
-use getopts::Options;
+use clap::Clap;
 
 use crate::waitmate::app::App;
 
 mod waitmate;
 
-fn print_usage(program: &str, opts: Options) {
-    let brief = format!("Usage: {} [options]", program);
-    print!("{}", opts.usage(&brief));
+#[derive(Clap)]
+#[clap(version = "1.0", author = "mark@markriley.net")]
+struct Opts {
+    #[clap(short, long)]
+    config: Option<String>,
+
+    #[clap(subcommand)]
+    sub_command: SubCommand
+}
+
+#[derive(Clap)]
+enum SubCommand {
+    #[clap(version = "1.0", author = "mark@markriley.net")]
+    Server(ServerOpts),
+
+    #[clap(version = "1.0", author = "mark@markriley.net")]
+    Client(ClientOpts),
+
+    #[clap(version = "1.0", author = "mark@markriley.net")]
+    Dump,
+}
+
+#[derive(Clap)]
+struct ServerOpts {
+    #[clap(short, long, default_value = "tcp://*:12345")]
+    listen: String
+}
+
+#[derive(Clap)]
+struct ClientOpts {
+    #[clap(short, long, default_value = "tcp://127.0.0.1:12345")]
+    connect: String
 }
 
 fn main() {
     let args: Vec<String> = env::args().collect();
     let program = args[0].clone();
+    let opts: Opts = Opts::parse();
 
-    let mut opts = Options::new();
-    opts.optopt("s", "server", "Run a server", "tcp://*:12134");
-    opts.optopt("c", "client", "Run a client", "tcp://localhost:12134");
-    opts.optflag("d", "dump", "dump");
-    opts.optflag("h", "help", "print this help menu");
-
-    let matches = match opts.parse(&args[1..]) {
-        Ok(m) => { m }
-        Err(f) => { panic!(f.to_string()) }
-    };
-    if matches.opt_present("h") {
-        print_usage(&program, opts);
-        return;
-    }
-    if matches.opt_present("d") {
-        App::new().dump();
-        return;
-    }
-
-    let server = matches.opt_str("s");
-    let client = matches.opt_str("c");
-    if server.is_some() {
-        App::new().run_server(server.unwrap().as_str());
-    } else if client.is_some() {
-        App::new().run_client(client.unwrap().as_str());
-    } else {
-        App::new().run();
+    match opts.sub_command {
+        SubCommand::Client(a) => App::new(true).run_client(a.connect.as_str()),
+        SubCommand::Server(a) => App::new(false).run_server(a.listen.as_str()),
+        SubCommand::Dump => App::new(false).dump(),
     }
 }

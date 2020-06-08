@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 use serde::export::Formatter;
 use uuid::Uuid;
 
-#[derive(Debug, Deserialize, Serialize, PartialEq)]
+#[derive(Debug, Deserialize, Serialize, PartialEq, Eq)]
 pub enum Level {
     TRACE,
     DEBUG,
@@ -16,7 +16,7 @@ pub enum Level {
     ERROR
 }
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Deserialize, Serialize, PartialEq, Eq)]
 pub struct Event {
     pub id: Uuid,
     pub time: u128,

@@ -78,7 +78,7 @@ mod tests {
     use std::{process, thread};
     use std::time::{Duration, SystemTime};
 
-    use crate::waitmate::api::{EmptyEventBus, EmptyNamed, Event, Level, Named, Notifier, Waiter};
+    use crate::waitmate::api::{EmptyEventBus, EmptyNamed, Event, Level, Notifier, Waiter};
     use crate::waitmate::net::{Client, Server};
     use crate::waitmate::thread::EventChannel;
 

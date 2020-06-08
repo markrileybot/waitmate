@@ -53,12 +53,13 @@ impl NotifierThread {
         let handle = thread::Builder::new()
             .name(String::from(notifier.name()))
             .spawn(move || {
-                event_log.tail(notifier.name(), |cursor|  {
-                    for (_, event) in cursor {
-                        notifier.notify(event, &event_bus)
-                    }
-                    return ticklee.recv().unwrap_or(false);
-                });
+                let cursor = event_log.build_cursor()
+                    .named(notifier.name())
+                    .tailing(Some(ticklee))
+                    .build();
+                for (_, event) in cursor {
+                    notifier.notify(event, &event_bus);
+                }
             }).unwrap();
 
         return NotifierThread {
