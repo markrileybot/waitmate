@@ -1,6 +1,7 @@
 use std::sync::Arc;
 use std::thread;
 use std::thread::JoinHandle;
+use log::info;
 
 use crossbeam::channel::{bounded, Receiver, Sender, unbounded};
 
@@ -26,7 +27,7 @@ impl EventChannel {
     pub fn done(&mut self) {
         if !self.done {
             self.done = true;
-            self.sender.send(None).unwrap();
+            self.sender.send(None).unwrap_or(());
         }
     }
 }
@@ -99,7 +100,9 @@ impl WaiterThread {
         let handle = thread::Builder::new()
             .name(String::from(waiter.name()))
             .spawn(move || {
+                info!("{} starting", waiter.name());
                 waiter.wait(&event_bus);
+                info!("{} finished", waiter.name());
             }).unwrap();
 
         return WaiterThread {

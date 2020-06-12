@@ -43,6 +43,8 @@ struct ClientOpts {
 }
 
 fn main() {
+    env_logger::init();
+
     let args: Vec<String> = env::args().collect();
     let program = args[0].clone();
     let opts: Opts = Opts::parse();

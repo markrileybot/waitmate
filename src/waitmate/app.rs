@@ -2,9 +2,12 @@ use std::borrow::Borrow;
 use std::path::PathBuf;
 use std::process;
 use std::sync::Arc;
+use std::thread;
 
 use config::{Config, FileFormat};
-use crossbeam::channel::{Receiver, Select};
+use crossbeam::channel::{Receiver, Select, unbounded};
+use log::info;
+use signal_hook::{iterator::Signals, SIGINT, SIGTERM, SIGQUIT, SIGHUP};
 
 use crate::waitmate::api::{Event, Notifier, Waiter};
 use crate::waitmate::http::Server as HttpServer;
@@ -95,32 +98,54 @@ impl App {
             .iter()
             .map(|m| m.channel())
             .for_each(|r| receivers.push(r));
+
+        let (sig_tx, sig_rx) = unbounded();
+        let sig_id = selector.recv(&sig_rx);
+        std::thread::spawn(move || {
+            let signals = Signals::new(&[SIGINT, SIGTERM, SIGQUIT, SIGHUP]).unwrap();
+            for sig in signals.forever() {
+                sig_tx.send(sig).unwrap_or(());
+            }
+        });
+
         receivers
             .iter()
             .for_each(|r| { selector.recv(*r); });
 
         while waiters_pending > 0 {
+            info!("{} Waiters pending", waiters_pending);
             let op = selector.select();
             let index = op.index();
-            let rec = receivers[index];
-            match op.recv(rec) {
-                Ok(e) => {
-                    match e {
-                        Some(event) => {
-                            local_event_log.add(&event);
-                            for x in &notifier_threads {
-                                x.tickle();
-                            }
-                        }
-                        None => {}
-                    }
+
+            if index == sig_id {
+                let sig = op.recv(&sig_rx).unwrap_or(SIGHUP);
+                if sig == SIGHUP {
+                    continue;
                 }
-                Err(_) => {
-                    selector.remove(index);
-                    waiters_pending -= 1;
+                break;
+            } else {
+                let rec = receivers[index - 1];
+                match op.recv(rec) {
+                    Ok(e) => {
+                        match e {
+                            Some(event) => {
+                                local_event_log.add(&event);
+                                for x in &notifier_threads {
+                                    x.tickle();
+                                }
+                            }
+                            None => {}
+                        }
+                    }
+                    Err(_) => {
+                        selector.remove(index);
+                        waiters_pending -= 1;
+                    }
                 }
             }
         }
+
+        info!("Exiting");
     }
 
     fn create_event_log(temp: bool) -> EventLog {

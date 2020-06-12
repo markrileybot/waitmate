@@ -1,41 +1,45 @@
+use std::borrow::{Borrow, Cow};
+use std::io::Bytes;
+use std::rc::Rc;
 use std::sync::Arc;
+use std::thread;
 
 use actix_rt::System;
 use actix_session::{CookieSession, Session};
-use actix_web::{App, Responder, web};
+use actix_web::{App, middleware, Responder, web};
+use actix_web::body::Body;
 use actix_web::http::{header, Method, StatusCode};
 use actix_web::HttpRequest;
 use actix_web::HttpResponse;
 use actix_web::HttpServer;
 use actix_web::Result;
+use rust_embed::RustEmbed;
+use mime_guess::from_path;
 
-use crate::waitmate::api::{EventBus, Named, Waiter, Event};
+use crate::waitmate::api::{Event, EventBus, Named, Waiter};
 use crate::waitmate::log::{Cursor, EventLog};
-use std::thread;
-use std::io::Bytes;
-use std::rc::Rc;
-use std::borrow::Borrow;
 
-/// simple index handler
-#[get("/welcome")]
-async fn welcome(session: Session, req: HttpRequest) -> Result<HttpResponse> {
-    // session
-    let mut counter = 1;
-    if let Some(count) = session.get::<i32>("counter")? {
-        println!("SESSION value: {}", count);
-        counter = count + 1;
+#[derive(RustEmbed)]
+#[folder = "target/web"]
+struct WebResources;
+
+fn get_embedded_file(path: &str) -> HttpResponse {
+    match WebResources::get(path) {
+        Some(content) => {
+            let body: Body = match content {
+                Cow::Borrowed(bytes) => bytes.into(),
+                Cow::Owned(bytes) => bytes.into(),
+            };
+            HttpResponse::Ok()
+                .content_type(from_path(path).first_or_octet_stream().as_ref())
+                .body(body)
+        }
+        None => HttpResponse::NotFound().body("404 Not Found"),
     }
-
-    // set counter to session
-    session.set("counter", counter)?;
-
-    Ok(HttpResponse::build(StatusCode::OK)
-        .content_type("text/plain; charset=utf-8")
-        .body(format!("HI {}", counter)))
 }
 
 #[get("/api/v1/event")]
-async fn get_events(req: HttpRequest, event_log: web::Data<Arc<EventLog>>) -> impl Responder {
+async fn get_events(_req: HttpRequest, event_log: web::Data<Arc<EventLog>>) -> impl Responder {
     let mut resp = String::from("[");
     let c = event_log.build_cursor().build();
     for (key, event) in c {
@@ -45,7 +49,20 @@ async fn get_events(req: HttpRequest, event_log: web::Data<Arc<EventLog>>) -> im
         resp.push_str(serde_json::to_string(&event).unwrap().as_str());
     }
     resp.push(']');
-    return HttpResponse::Ok().body(resp);
+
+    return HttpResponse::Ok()
+        .content_type("application/json")
+        .body(resp);
+}
+
+#[get("/{_:.*}")]
+async fn static_file(path: web::Path<(String,)>) -> HttpResponse {
+    return get_embedded_file(&path.0);
+}
+
+#[get("/")]
+async fn index() -> HttpResponse {
+    return get_embedded_file("index.html");
 }
 
 fn run(address: & str, el: Arc<EventLog>) {
@@ -58,12 +75,13 @@ fn run(address: & str, el: Arc<EventLog>) {
             // cookie session middleware
             .wrap(CookieSession::signed(&[0; 32]).secure(false))
             // enable logger - always register actix-web Logger middleware last
-            // .wrap(middleware::Logger::default())
+            .wrap(middleware::Logger::default())
             // register favicon
             // .service(favicon)
             // register simple route, handle all methods
-            .service(welcome)
             .service(get_events)
+            .service(index)
+            .service(static_file)
         // with path parameters
         // .service(web::resource("/user/{name}").route(web::get().to(with_param)))
         // async response body

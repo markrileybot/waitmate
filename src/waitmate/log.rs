@@ -1,5 +1,6 @@
 use std::path::Path;
 use std::str;
+use log::info;
 
 use rocksdb::{ColumnFamily, DB, DBRawIterator, Options, ReadOptions};
 use uuid::Uuid;
@@ -171,10 +172,12 @@ impl EventLog {
         if path.exists() {
             let cf_names = vec!["offsets", "log"];
             db = DB::open_cf(&opts, &path, cf_names).unwrap();
+            info!("Opened existing log {}", path.to_str().unwrap());
         } else {
             db = DB::open(&opts, &path).unwrap();
             db.create_cf("offsets", &opts).unwrap();
             db.create_cf("log", &opts).unwrap();
+            info!("Created new log {}", path.to_str().unwrap());
         }
 
         return EventLog {
@@ -220,6 +223,7 @@ impl EventLog {
     }
     fn close(&self) {
         let _ = DB::destroy(&Options::default(), &self.path);
+        info!("Closed log {}", self.path);
     }
 }
 impl Drop for EventLog {
