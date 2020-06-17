@@ -63,7 +63,7 @@ impl App {
     pub fn run_server(&self, address: &str) {
         let notifiers: Vec<Box<dyn Notifier>> = vec![Box::new(StdoutNotifier::new())];
         let waiters: Vec<Box<dyn Waiter>> = vec![Box::new(Server::new(address)),
-                                                 Box::new(HttpServer::new("127.0.0.1:12346",
+                                                 Box::new(HttpServer::new("0.0.0.0:12346",
                                                                           self.event_log.clone()))];
         self._run(notifiers, waiters)
     }

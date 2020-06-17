@@ -189,9 +189,27 @@ impl EventLog {
         let uuid = Uuid::from_u128(0);
         return Self::create_key(time, &uuid);
     }
-    fn create_key(time: &u128, id: &Uuid) -> Vec<u8> {
+    pub fn create_key(time: &u128, id: &Uuid) -> Vec<u8> {
         let key = format!("{}|{}", time, id);
         return key.into_bytes();
+    }
+    pub fn parse_key(key: &[u8]) -> Result<(u128, Uuid), String> {
+        let key_str = String::from(str::from_utf8(key).unwrap());
+        let key_parts: Vec<&str> = key_str.split("|").collect();
+        if key_parts.len() != 2 {
+            return Err(String::from("Expected key as time|uuid !"));
+        }
+        let time= key_parts[0].parse::<u128>();
+        if time.is_err() {
+            return Err(time.err().map_or(String::from("?"),
+                                         |e| e.to_string()));
+        }
+        let id = key_parts[1].parse::<Uuid>();
+        if id.is_err() {
+            return Err(id.err().map_or(String::from("?"),
+                                       |e| e.to_string()));
+        }
+        return Ok((time.unwrap(), id.unwrap()));
     }
     pub fn add(&self, event: &Event) {
         let key = Self::create_key(&event.time, &event.id);
@@ -364,5 +382,16 @@ mod tests {
             count+=1;
         }
         assert_eq!(3, count);
+    }
+
+    #[test]
+    fn test_make_parse_key() {
+        let og_id = Uuid::new_v4();
+        let key = EventLog::create_key(&123, &og_id);
+        println!("{}", std::str::from_utf8(&key).unwrap());
+
+        let (time, id) = EventLog::parse_key(&key).unwrap();
+        assert_eq!(123, time);
+        assert_eq!(og_id, id);
     }
 }

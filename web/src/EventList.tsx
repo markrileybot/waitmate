@@ -1,10 +1,13 @@
 import * as React from 'react';
 import {Event} from './Model';
 import {LoadableComponent, LoadableProps, LoadableState} from './LoadableComponent';
+import EventCard from "./EventCard";
+import {Socket, SocketState} from "./Api";
 
 interface Props extends LoadableProps<Event[]> {
     selected: string,
-    onSelect: (id: string) => void
+    onSelect: (id: string) => void,
+    messenger: Socket
 }
 
 export default class EventList extends LoadableComponent<Event[], Props, LoadableState<Event[]>> {
@@ -15,16 +18,19 @@ export default class EventList extends LoadableComponent<Event[], Props, Loadabl
         error: null,
     }
 
-    onClick(id: string): void {
-        if (id === "1") {
-            alert("It says there isn't any!");
-        }
-        this.props.onSelect(id);
+    onClick(events: Event[]): void {
     }
 
     componentDidLoad(data: Event[]) {
-        data.sort((g0, g1) => {
-            return -((g0.time || 0) - (g1.time || 0));
+        let latestData = data[data.length - 1];
+        this.props.messenger.addListener(e => {
+            data.push(e);
+            this.setState({data: data});
+        });
+        this.props.messenger.addStateListener(s => {
+            if (s === SocketState.CONNECTED) {
+                this.props.messenger.send("set_offset", {"key": latestData.time + "|" + latestData.id});
+            }
         });
     }
 
@@ -44,15 +50,9 @@ export default class EventList extends LoadableComponent<Event[], Props, Loadabl
             }
             events.push(e);
         });
-
-        Object.entries(byCat).forEach((entry)=>{
-
-        });
-        return (<div className='grid grid-cols-5 gap-4'>{byCat.map(e => (
-            <div className="shadow-lg border-solid border-1 border-gray-600 rounded-lg"
-                 key={e.id}
-                 onClick={this.onClick.bind(this, e.id)}>{e.description}</div>
-        ))}</div>)
+        return (<div className="flex flex-wrap">{Object.values(byCat).map(e => (
+            <EventCard key={e[0].category} event={e[e.length-1]} count={e.length}/>
+        ))}</div>);
     }
 
     renderLoading() {
